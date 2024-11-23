@@ -1,17 +1,22 @@
 import json
 import asyncio
-import requests
+import aiohttp
 import io
 from PIL import Image
 from flask import Flask, request
 from telegram import Update, Bot
 from huggingface_hub import InferenceClient
-from threading import Thread
+from aiohttp import ClientSession, ClientTimeout
+from concurrent.futures import ThreadPoolExecutor
 
 # Configurações
 TELEGRAM_TOKEN = "7670556395:AAGSRyYtUWnSxeeEyjdCYhwXIQhY2ASSbmg"
 HUGGINGFACE_API_KEY = "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"
 WEBHOOK_URL = "https://chatbotai-m7lj.onrender.com/webhook"
+
+# Configurações do pool de conexões
+MAX_CONNECTIONS = 10
+TIMEOUT_SECONDS = 30
 
 # Inicializar APIs
 hf_client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
@@ -21,6 +26,17 @@ app = Flask(__name__)
 # Histórico de mensagens
 history = {}
 
+# Pool de conexões global
+session = None
+
+async def get_session():
+    global session
+    if session is None or session.closed:
+        timeout = ClientTimeout(total=TIMEOUT_SECONDS)
+        connector = aiohttp.TCPConnector(limit=MAX_CONNECTIONS, force_close=True)
+        session = ClientSession(connector=connector, timeout=timeout)
+    return session
+
 async def generate_image(prompt):
     """
     Gera uma imagem usando a API do Hugging Face
@@ -29,65 +45,47 @@ async def generate_image(prompt):
     headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
     
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
-        if response.status_code == 200:
-            return io.BytesIO(response.content)
-        else:
-            raise Exception(f"Erro na API: {response.status_code} - {response.text}")
+        async with (await get_session()).post(API_URL, headers=headers, json={"inputs": prompt}) as response:
+            if response.status == 200:
+                return io.BytesIO(await response.read())
+            else:
+                raise Exception(f"Erro na API: {response.status} - {await response.text()}")
     except Exception as e:
         raise Exception(f"Erro ao gerar imagem: {e}")
 
-def create_event_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    return loop
-
 async def handle_text(update: Update):
-    user_id = update.effective_user.id
-    if user_id not in history:
-        history[user_id] = []
-    
-    user_message = update.message.text
-    
-    # Verifica se é um comando para gerar imagem
-    if user_message.lower().startswith('/imagem '):
-        try:
-            # Extrai o prompt removendo o comando '/imagem '
+    try:
+        user_id = update.effective_user.id
+        if user_id not in history:
+            history[user_id] = []
+        
+        user_message = update.message.text
+        
+        if user_message.lower().startswith('/imagem '):
             prompt = user_message[8:].strip()
-            
-            # Envia mensagem de aguarde
             wait_message = await update.message.reply_text("Gerando sua imagem, por favor aguarde...")
             
-            # Gera a imagem
-            image_bytes = await generate_image(prompt)
-            
-            # Envia a imagem para o Telegram
-            await update.message.reply_photo(
-                photo=image_bytes,
-                caption=f"Imagem gerada para: {prompt}"
-            )
-            
-            # Remove a mensagem de aguarde
-            await wait_message.delete()
+            try:
+                image_bytes = await generate_image(prompt)
+                await update.message.reply_photo(
+                    photo=image_bytes,
+                    caption=f"Imagem gerada para: {prompt}"
+                )
+            finally:
+                await wait_message.delete()
             return
-            
-        except Exception as e:
-            await update.message.reply_text(f"Erro ao gerar imagem: {str(e)}")
-            return
-    
-    # Se não for comando de imagem, processa como mensagem normal
-    history[user_id].append({"role": "user", "content": user_message})
-    
-    if len(history[user_id]) > 3:
-        history[user_id] = history[user_id][-3:]
+        
+        history[user_id].append({"role": "user", "content": user_message})
+        
+        if len(history[user_id]) > 3:
+            history[user_id] = history[user_id][-3:]
 
-    messages = [
-        {"role": "system", "content": "Responda sempre em português."},
-        {"role": "assistant", "content": "Fui criado por Jorge Sebastião e Diqui Joaquim, conhecido como Ghost04."}
-    ]
-    messages.extend(history[user_id])
+        messages = [
+            {"role": "system", "content": "Responda sempre em português."},
+            {"role": "assistant", "content": "Fui criado por Jorge Sebastião e Diqui Joaquim, conhecido como Ghost04."}
+        ]
+        messages.extend(history[user_id])
 
-    try:
         completion = hf_client.chat.completions.create(
             model="meta-llama/Llama-3.2-11B-Vision-Instruct",
             messages=messages,
@@ -100,6 +98,7 @@ async def handle_text(update: Update):
             
     except Exception as e:
         await update.message.reply_text(f"Erro ao processar sua mensagem: {str(e)}")
+        print(f"Erro em handle_text: {e}")
 
 async def handle_image(update: Update):
     try:
@@ -127,23 +126,17 @@ async def handle_image(update: Update):
         await update.message.reply_text(description)
     except Exception as e:
         await update.message.reply_text(f"Erro ao processar a imagem: {str(e)}")
+        print(f"Erro em handle_image: {e}")
 
 @app.route("/webhook", methods=["POST"])
-def webhook():
+async def webhook():
     try:
-        loop = create_event_loop()
-        
-        async def process_update():
-            update = Update.de_json(request.get_json(force=True), bot)
-            if update.message:
-                if update.message.text:
-                    await handle_text(update)
-                elif update.message.photo:
-                    await handle_image(update)
-        
-        loop.run_until_complete(process_update())
-        loop.close()
-        
+        update = Update.de_json(request.get_json(force=True), bot)
+        if update.message:
+            if update.message.text:
+                await handle_text(update)
+            elif update.message.photo:
+                await handle_image(update)
         return "OK"
     except Exception as e:
         print(f"Erro no webhook: {e}")
@@ -153,14 +146,14 @@ def webhook():
 def index():
     return "Bot Telegram está funcionando!"
 
-def setup_webhook():
+async def setup_webhook():
     try:
-        bot.delete_webhook()
-        bot.set_webhook(url=WEBHOOK_URL)
+        await bot.delete_webhook()
+        await bot.set_webhook(url=WEBHOOK_URL)
         print("Webhook configurado com sucesso!")
     except Exception as e:
         print(f"Erro ao configurar webhook: {e}")
 
 if __name__ == "__main__":
-    setup_webhook()
+    asyncio.run(setup_webhook())
     app.run(debug=True, threaded=True)
