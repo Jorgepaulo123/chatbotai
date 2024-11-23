@@ -3,6 +3,7 @@ python-telegram-bot==20.3
 huggingface_hub
 requests
 gunicorn
+aiohttp
 Pillow
 
 
