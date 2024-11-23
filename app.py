@@ -10,7 +10,7 @@ from aiohttp import ClientSession, ClientTimeout
 from concurrent.futures import ThreadPoolExecutor
 
 # Configurações
-TELEGRAM_TOKEN = "7670556395:AAGSRyYtUWnSxeeEyjdCYhwXIQhY2ASSbmg"
+TELEGRAM_TOKEN = "7486213726:AAEMILhIo_FUl1-uwCEulyLXT5A5Nruc7lw"
 HUGGINGFACE_API_KEY = "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"
 WEBHOOK_URL = "https://chatbotai-m7lj.onrender.com/webhook"
 
