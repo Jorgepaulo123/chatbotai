@@ -11,7 +11,7 @@ from threading import Thread
 # Configurações
 TELEGRAM_TOKEN = "7670556395:AAGSRyYtUWnSxeeEyjdCYhwXIQhY2ASSbmg"
 HUGGINGFACE_API_KEY = "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"
-WEBHOOK_URL = "https://chatbot-nu-swart-90.vercel.app/webhook"
+WEBHOOK_URL = "https://chatbotai-m7lj.onrender.com/webhook"
 
 # Inicializar APIs
 hf_client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
