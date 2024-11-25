@@ -87,7 +87,7 @@ async def handle_text(update: Update):
         messages.extend(history[user_id])
 
         completion = hf_client.chat.completions.create(
-            model="meta-llama/Llama-3.2-11B-Vision-Instruct",
+            model="Qwen/Qwen2.5-Coder-32B-Instruct",
             messages=messages,
             max_tokens=500
         )
