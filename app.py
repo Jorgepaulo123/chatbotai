@@ -15,8 +15,8 @@ HUGGINGFACE_API_KEY = "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"
 WEBHOOK_URL = "https://chatbotai-m7lj.onrender.com/webhook"
 
 # Configurações do pool de conexões
-MAX_CONNECTIONS = 12
-TIMEOUT_SECONDS = 90
+MAX_CONNECTIONS = 5
+TIMEOUT_SECONDS = 4
 
 # Inicializar APIs
 hf_client = InferenceClient(api_key=HUGGINGFACE_API_KEY)
